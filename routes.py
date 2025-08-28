@@ -1,6 +1,7 @@
 import os
 import json
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from flask import render_template, request, jsonify, session, redirect, url_for
 from sqlalchemy import desc, or_
 from app import app, db
@@ -13,13 +14,52 @@ from utils import (
     calculate_time_remaining
 )
 
+
+def ensure_session_from_header() -> bool:
+    """If session is missing, try to restore it from Telegram init data header.
+    Frontend sends 'X-Telegram-Init-Data' with WebApp initData. We parse (and optionally verify)
+    and attach the user to the Flask session.
+    Returns True if the session is present/created, False otherwise.
+    """
+    if 'user_id' in session:
+        return True
+    init_data = request.headers.get('X-Telegram-Init-Data')
+    if not init_data:
+        return False
+    try:
+        # Optional verify (can be enabled when TELEGRAM_BOT_TOKEN is set and strict mode desired)
+        bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+        # if bot_token and not verify_telegram_webapp_data(init_data, bot_token):
+        #     app.logger.warning('Init data verification failed from header')
+        #     return False
+
+        user_data = parse_telegram_user_data(init_data)
+        if not user_data:
+            return False
+        user = User.query.filter_by(telegram_id=user_data['id']).first()
+        if not user:
+            user = User(
+                telegram_id=user_data['id'],
+                username=user_data.get('username'),
+                first_name=user_data.get('first_name'),
+                last_name=user_data.get('last_name')
+            )
+            db.session.add(user)
+            db.session.commit()
+        session['user_id'] = user.id
+        session['telegram_id'] = user.telegram_id
+        return True
+    except Exception as e:
+        app.logger.error(f"ensure_session_from_header error: {e}")
+        return False
+
 @app.route('/')
 def index():
     """Main page - Home screen"""
     user_id = session.get('user_id')
     
-    # For development - create test user if none exists
-    if not user_id:
+    # Development-only: optionally seed a test user when Telegram auth is disabled
+    if not user_id and os.environ.get('DISABLE_TELEGRAM_AUTH', '').lower() in ('1', 'true', 'yes'):
         test_user = User.query.filter_by(telegram_id=12345).first()
         if not test_user:
             test_user = User(
@@ -48,6 +88,34 @@ def index():
 def authenticate():
     """Authenticate user via Telegram WebApp"""
     try:
+        # Dev shortcut: allow auth without Telegram when flag is set
+        if os.environ.get('DISABLE_TELEGRAM_AUTH', '').lower() in ('1', 'true', 'yes'):
+            # Create/get a deterministic dev user
+            dev_telegram_id = 99999
+            user = User.query.filter_by(telegram_id=dev_telegram_id).first()
+            if not user:
+                user = User(
+                    telegram_id=dev_telegram_id,
+                    username='devuser',
+                    first_name='Dev',
+                    last_name='User'
+                )
+                db.session.add(user)
+                db.session.commit()
+            session['user_id'] = user.id
+            session['telegram_id'] = user.telegram_id
+            return jsonify({
+                'success': True,
+                'user': {
+                    'id': user.id,
+                    'telegram_id': user.telegram_id,
+                    'username': user.username,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name
+                },
+                'mode': 'dev_auth'
+            })
+
         data = request.get_json()
         init_data = data.get('initData')
         
@@ -103,10 +171,20 @@ def authenticate():
 @app.route('/create')
 def create_listing():
     """Create listing wizard"""
-    # For development, allow access without authentication
-    # In production, you would uncomment the authentication check
-    # if 'user_id' not in session:
-    #     return redirect(url_for('index'))
+    # For development: seed a test user like on index() if no session exists.
+    # In production, require Telegram WebApp auth.
+    if 'user_id' not in session and os.environ.get('DISABLE_TELEGRAM_AUTH', '').lower() in ('1', 'true', 'yes'):
+        test_user = User.query.filter_by(telegram_id=12345).first()
+        if not test_user:
+            test_user = User(
+                telegram_id=12345,
+                first_name='Тестовый пользователь',
+                username='testuser'
+            )
+            db.session.add(test_user)
+            db.session.commit()
+        session['user_id'] = test_user.id
+        session['telegram_id'] = test_user.telegram_id
     return render_template('create_listing.html')
 
 @app.route('/my-listings')
@@ -116,7 +194,13 @@ def my_listings():
     # if 'user_id' not in session:
     #     return redirect(url_for('index'))
     
-    user_id = session.get('user_id', 1)  # Default to user 1 for development
+    user_id = session.get('user_id')
+    if not user_id and os.environ.get('DISABLE_TELEGRAM_AUTH', '').lower() in ('1', 'true', 'yes'):
+        # Dev default to first user if exists
+        first_user = User.query.order_by(User.id.asc()).first()
+        if first_user:
+            user_id = first_user.id
+            session['user_id'] = user_id
     status_filter = request.args.get('status', 'all')
     
     query = Listing.query.filter_by(seller_id=user_id)
@@ -135,13 +219,27 @@ def my_listings():
 @app.route('/api/listings', methods=['POST'])
 def create_listing_api():
     """Create a new listing"""
-    if 'user_id' not in session:
+    if 'user_id' not in session and not ensure_session_from_header():
         return jsonify({'error': 'Not authenticated'}), 401
     
     user_id = session['user_id']
     
     try:
         data = request.get_json()
+        
+        # Helpers to safely parse numbers
+        def num_or_none(val):
+            if val is None:
+                return None
+            if isinstance(val, (int, float, Decimal)):
+                return val
+            val_str = str(val).strip()
+            if val_str == '':
+                return None
+            try:
+                return float(val_str)
+            except ValueError:
+                return None
         
         # Create new listing
         listing = Listing(
@@ -155,16 +253,16 @@ def create_listing_api():
         
         # Set mode-specific fields
         if listing.sale_mode == SaleMode.FIXED_PRICE:
-            listing.fixed_price = data.get('fixed_price')
+            listing.fixed_price = num_or_none(data.get('fixed_price'))
             listing.is_negotiable = data.get('is_negotiable', False)
             listing.current_price = listing.fixed_price
         elif listing.sale_mode == SaleMode.NAME_YOUR_PRICE:
-            listing.min_price = data.get('min_price')
+            listing.min_price = num_or_none(data.get('min_price'))
             listing.private_offers = data.get('private_offers', False)
         elif listing.sale_mode == SaleMode.AUCTION:
-            listing.start_price = data.get('start_price')
+            listing.start_price = num_or_none(data.get('start_price'))
             listing.current_price = listing.start_price
-            listing.bid_step = data.get('bid_step', 1.00)
+            listing.bid_step = num_or_none(data.get('bid_step')) or 1.00
             if data.get('end_time'):
                 listing.end_time = datetime.fromisoformat(data['end_time'].replace('Z', '+00:00'))
         
@@ -179,14 +277,14 @@ def create_listing_api():
         })
         
     except Exception as e:
-        app.logger.error(f"Error creating listing: {e}")
+        app.logger.exception(f"Error creating listing: {e}")
         db.session.rollback()
-        return jsonify({'error': 'Failed to create listing'}), 500
+        return jsonify({'error': 'Failed to create listing', 'detail': str(e)}), 500
 
 @app.route('/api/listings/<int:listing_id>/photos', methods=['POST'])
 def upload_photos(listing_id):
     """Upload photos for a listing"""
-    if 'user_id' not in session:
+    if 'user_id' not in session and not ensure_session_from_header():
         return jsonify({'error': 'Not authenticated'}), 401
     
     # Verify listing ownership
@@ -234,7 +332,7 @@ def upload_photos(listing_id):
 @app.route('/api/listings/<int:listing_id>/publish', methods=['POST'])
 def publish_listing(listing_id):
     """Publish a listing"""
-    if 'user_id' not in session:
+    if 'user_id' not in session and not ensure_session_from_header():
         return jsonify({'error': 'Not authenticated'}), 401
     
     user_id = session['user_id']
@@ -258,7 +356,7 @@ def publish_listing(listing_id):
 @app.route('/api/listings/<int:listing_id>/close', methods=['POST'])
 def close_listing(listing_id):
     """Close a listing"""
-    if 'user_id' not in session:
+    if 'user_id' not in session and not ensure_session_from_header():
         return jsonify({'error': 'Not authenticated'}), 401
     
     listing = Listing.query.filter_by(id=listing_id, seller_id=session['user_id']).first()
@@ -281,7 +379,7 @@ def close_listing(listing_id):
 @app.route('/api/listings/<int:listing_id>/bid', methods=['POST'])
 def place_bid(listing_id):
     """Place a bid on a listing"""
-    if 'user_id' not in session:
+    if 'user_id' not in session and not ensure_session_from_header():
         return jsonify({'error': 'Not authenticated'}), 401
     
     listing = Listing.query.get_or_404(listing_id)
@@ -367,6 +465,21 @@ def get_listing(listing_id):
         'time_remaining': time_remaining,
         'seller_name': listing.seller.first_name or listing.seller.username,
         'is_owner': session.get('user_id') == listing.seller_id
+    })
+
+# Debug helper to inspect session/auth state
+@app.route('/api/whoami')
+def whoami():
+    """Return current session user info (development helper)."""
+    uid = session.get('user_id')
+    tid = session.get('telegram_id')
+    user = User.query.get(uid) if uid else None
+    return jsonify({
+        'authenticated': uid is not None,
+        'user_id': uid,
+        'telegram_id': tid,
+        'username': user.username if user else None,
+        'first_name': user.first_name if user else None
     })
 
 @app.template_filter('format_price')

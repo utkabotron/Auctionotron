@@ -62,8 +62,11 @@ async function apiCall(url, options = {}) {
         const response = await fetch(url, {
             headers: {
                 'Content-Type': 'application/json',
-                ...options.headers
+                ...options.headers,
+                // Pass Telegram initData so backend can restore session if cookie is missing
+                ...window.tgWebApp?.getAuthHeaders?.()
             },
+            credentials: 'include',
             ...options
         });
 
@@ -514,6 +517,11 @@ async function uploadPhotos(listingId) {
     
     const response = await fetch(`/api/listings/${listingId}/photos`, {
         method: 'POST',
+        credentials: 'include',
+        // Attach Telegram initData header as well for auth rehydration
+        headers: {
+            ...window.tgWebApp?.getAuthHeaders?.()
+        },
         body: formData
     });
     

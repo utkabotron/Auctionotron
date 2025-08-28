@@ -180,6 +180,7 @@ class TelegramWebApp {
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                credentials: 'include',
                 body: JSON.stringify({ initData })
             });
 
@@ -194,6 +195,11 @@ class TelegramWebApp {
             console.error('Authentication error:', error);
             throw error;
         }
+    }
+
+    getAuthHeaders() {
+        const initData = this.getInitData();
+        return initData ? { 'X-Telegram-Init-Data': initData } : {};
     }
 
     setHeaderColor(color) {
