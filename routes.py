@@ -87,17 +87,20 @@ def authenticate():
 @app.route('/create')
 def create_listing():
     """Create listing wizard"""
-    if 'user_id' not in session:
-        return redirect(url_for('index'))
+    # For development, allow access without authentication
+    # In production, you would uncomment the authentication check
+    # if 'user_id' not in session:
+    #     return redirect(url_for('index'))
     return render_template('create_listing.html')
 
 @app.route('/my-listings')
 def my_listings():
     """User's listings management"""
-    if 'user_id' not in session:
-        return redirect(url_for('index'))
+    # For development, allow access without authentication
+    # if 'user_id' not in session:
+    #     return redirect(url_for('index'))
     
-    user_id = session['user_id']
+    user_id = session.get('user_id', 1)  # Default to user 1 for development
     status_filter = request.args.get('status', 'all')
     
     query = Listing.query.filter_by(seller_id=user_id)
