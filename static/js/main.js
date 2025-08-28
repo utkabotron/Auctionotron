@@ -634,26 +634,30 @@ if (window.location.pathname === '/create') {
 
 // Fix button clicks - ensure they work without WebApp API
 document.addEventListener('DOMContentLoaded', function() {
-    // Make all buttons and links clickable
+    // Make all buttons and links clickable with visual feedback
     document.querySelectorAll('button, a').forEach(element => {
         element.style.cursor = 'pointer';
         element.style.userSelect = 'none';
         
-        // Add click event handling
-        element.addEventListener('click', function(e) {
-            // Add visual feedback
+        // Add visual feedback without preventing default behavior
+        element.addEventListener('touchstart', function(e) {
             this.style.transform = 'scale(0.95)';
+        });
+        
+        element.addEventListener('touchend', function(e) {
             setTimeout(() => {
                 this.style.transform = 'scale(1)';
             }, 100);
         });
-    });
-    
-    // Fix create listing button clicks specifically
-    document.querySelectorAll('a[href*="create"]').forEach(link => {
-        link.addEventListener('click', function(e) {
-            e.preventDefault();
-            window.location.href = this.href;
+        
+        element.addEventListener('mousedown', function(e) {
+            this.style.transform = 'scale(0.95)';
+        });
+        
+        element.addEventListener('mouseup', function(e) {
+            setTimeout(() => {
+                this.style.transform = 'scale(1)';
+            }, 100);
         });
     });
 });
