@@ -67,6 +67,12 @@ body {
     color: var(--tg-theme-text-color);
 }
 
+.user-greeting {
+    color: var(--tg-theme-hint-color);
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+
 /* Progress bar */
 .progress-container {
     padding: 0 var(--spacing-md);

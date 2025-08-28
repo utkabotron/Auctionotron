@@ -170,6 +170,7 @@ class TelegramWebApp {
         
         if (!initData) {
             console.warn('No init data available for authentication');
+            // For development, allow without Telegram data
             return null;
         }
 
