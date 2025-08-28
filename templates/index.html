@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Auction Mini App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.29.0/feather.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/telegram-theme.css') }}" rel="stylesheet">
+</head>
+<body>
+    <div class="telegram-app">
+        <!-- Header -->
+        <div class="app-header">
+            <div class="container-fluid">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <h1 class="app-title">Auction Hub</h1>
+                    </div>
+                    <div class="col-auto">
+                        <button class="btn btn-outline-primary btn-sm" id="themeToggle">
+                            <i data-feather="sun" class="icon"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="container-fluid py-3">
+            <!-- Welcome Section -->
+            <div class="welcome-section mb-4">
+                <div class="text-center">
+                    <h2 class="h4 mb-2">Welcome to Auction Hub</h2>
+                    <p class="text-muted mb-3">Buy and sell items with multiple selling modes</p>
+                    <a href="{{ url_for('create_listing') }}" class="btn btn-primary btn-lg">
+                        <i data-feather="plus" class="icon me-2"></i>
+                        Create Listing
+                    </a>
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="row mb-4" id="quickStats" style="display: none;">
+                <div class="col-6">
+                    <div class="stat-card">
+                        <div class="stat-number" id="activeListingsCount">0</div>
+                        <div class="stat-label">Active Listings</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalBidsCount">0</div>
+                        <div class="stat-label">Total Bids</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User's Active Listings -->
+            {% if user_listings %}
+            <div class="section-header mb-3">
+                <h3 class="h5 mb-0">Your Recent Listings</h3>
+                <a href="{{ url_for('my_listings') }}" class="btn btn-outline-primary btn-sm">View All</a>
+            </div>
+            
+            <div class="listings-grid">
+                {% for listing in user_listings %}
+                <div class="listing-card" data-listing-id="{{ listing.id }}">
+                    <div class="listing-header">
+                        <h4 class="listing-title">{{ listing.title }}</h4>
+                        <span class="status-chip status-{{ listing.status.value }}">
+                            {{ listing.status.value.replace('_', ' ').title() }}
+                        </span>
+                    </div>
+                    
+                    {% if listing.photos %}
+                    <div class="listing-image">
+                        <img src="{{ url_for('static', filename='uploads/' + listing.photos[0].filename) }}" 
+                             alt="{{ listing.title }}" 
+                             class="img-fluid rounded">
+                    </div>
+                    {% endif %}
+                    
+                    <div class="listing-details">
+                        <div class="price-info">
+                            {% if listing.sale_mode.value == 'fixed_price' %}
+                                <span class="price">{{ listing.fixed_price|format_price }}</span>
+                                {% if listing.is_negotiable %}
+                                    <span class="price-note">Negotiable</span>
+                                {% endif %}
+                            {% elif listing.sale_mode.value == 'free' %}
+                                <span class="price">Free</span>
+                            {% elif listing.sale_mode.value == 'auction' %}
+                                <span class="price">{{ listing.current_price|format_price }}</span>
+                                <span class="price-note">Current bid</span>
+                            {% elif listing.sale_mode.value == 'name_your_price' %}
+                                <span class="price">Make Offer</span>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="listing-meta">
+                            <small class="text-muted">
+                                <i data-feather="clock" class="icon-xs"></i>
+                                {{ listing.created_at|time_ago }}
+                            </small>
+                            {% if listing.bids %}
+                            <small class="text-muted ms-2">
+                                <i data-feather="users" class="icon-xs"></i>
+                                {{ listing.bids|length }} bid{% if listing.bids|length != 1 %}s{% endif %}
+                            </small>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <!-- Empty State -->
+            <div class="empty-state text-center py-5">
+                <div class="empty-icon mb-3">
+                    <i data-feather="package" class="icon-lg text-muted"></i>
+                </div>
+                <h3 class="h5 mb-2">No listings yet</h3>
+                <p class="text-muted mb-3">Start by creating your first listing</p>
+                <a href="{{ url_for('create_listing') }}" class="btn btn-primary">
+                    <i data-feather="plus" class="icon me-2"></i>
+                    Create Your First Listing
+                </a>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Bottom Navigation -->
+        <div class="bottom-nav">
+            <div class="container-fluid">
+                <div class="row text-center">
+                    <div class="col">
+                        <a href="{{ url_for('index') }}" class="nav-item active">
+                            <i data-feather="home" class="icon"></i>
+                            <span>Home</span>
+                        </a>
+                    </div>
+                    <div class="col">
+                        <a href="{{ url_for('create_listing') }}" class="nav-item">
+                            <i data-feather="plus-circle" class="icon"></i>
+                            <span>Create</span>
+                        </a>
+                    </div>
+                    <div class="col">
+                        <a href="{{ url_for('my_listings') }}" class="nav-item">
+                            <i data-feather="list" class="icon"></i>
+                            <span>My Items</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.29.0/feather.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="{{ url_for('static', filename='js/telegram-webapp.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

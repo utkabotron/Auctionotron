@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>My Listings - Auction Mini App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.29.0/feather.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/telegram-theme.css') }}" rel="stylesheet">
+</head>
+<body>
+    <div class="telegram-app">
+        <!-- Header -->
+        <div class="app-header">
+            <div class="container-fluid">
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <button class="btn btn-link btn-sm p-0" onclick="history.back()">
+                            <i data-feather="arrow-left" class="icon"></i>
+                        </button>
+                    </div>
+                    <div class="col">
+                        <h1 class="app-title">My Listings</h1>
+                    </div>
+                    <div class="col-auto">
+                        <a href="{{ url_for('create_listing') }}" class="btn btn-primary btn-sm">
+                            <i data-feather="plus" class="icon"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Tabs -->
+        <div class="filter-tabs">
+            <div class="container-fluid">
+                <div class="btn-group w-100" role="group">
+                    <input type="radio" class="btn-check" name="statusFilter" id="filterAll" autocomplete="off" 
+                           {% if status_filter == 'all' %}checked{% endif %}>
+                    <label class="btn btn-outline-primary" for="filterAll">All</label>
+
+                    <input type="radio" class="btn-check" name="statusFilter" id="filterActive" autocomplete="off"
+                           {% if status_filter == 'active' %}checked{% endif %}>
+                    <label class="btn btn-outline-primary" for="filterActive">Active</label>
+
+                    <input type="radio" class="btn-check" name="statusFilter" id="filterEnded" autocomplete="off"
+                           {% if status_filter == 'ended' %}checked{% endif %}>
+                    <label class="btn btn-outline-primary" for="filterEnded">Ended</label>
+
+                    <input type="radio" class="btn-check" name="statusFilter" id="filterDraft" autocomplete="off"
+                           {% if status_filter == 'draft' %}checked{% endif %}>
+                    <label class="btn btn-outline-primary" for="filterDraft">Draft</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="container-fluid py-3">
+            {% if listings %}
+            <div class="listings-grid">
+                {% for listing in listings %}
+                <div class="listing-card" data-listing-id="{{ listing.id }}">
+                    <div class="listing-header">
+                        <h4 class="listing-title">{{ listing.title }}</h4>
+                        <div class="listing-actions">
+                            <span class="status-chip status-{{ listing.status.value }}">
+                                {{ listing.status.value.replace('_', ' ').title() }}
+                            </span>
+                            <div class="dropdown">
+                                <button class="btn btn-link btn-sm" type="button" data-bs-toggle="dropdown">
+                                    <i data-feather="more-vertical" class="icon"></i>
+                                </button>
+                                <ul class="dropdown-menu">
+                                    {% if listing.status.value == 'active' %}
+                                    <li><a class="dropdown-item" href="#" onclick="closeListing({{ listing.id }})">
+                                        <i data-feather="x-circle" class="icon-xs me-2"></i>Close Listing
+                                    </a></li>
+                                    {% endif %}
+                                    {% if listing.status.value in ['draft', 'active'] and not listing.bids %}
+                                    <li><a class="dropdown-item" href="#" onclick="editListing({{ listing.id }})">
+                                        <i data-feather="edit" class="icon-xs me-2"></i>Edit
+                                    </a></li>
+                                    {% endif %}
+                                    <li><a class="dropdown-item text-danger" href="#" onclick="deleteListing({{ listing.id }})">
+                                        <i data-feather="trash-2" class="icon-xs me-2"></i>Delete
+                                    </a></li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {% if listing.photos %}
+                    <div class="listing-image">
+                        <img src="{{ url_for('static', filename='uploads/' + listing.photos[0].filename) }}" 
+                             alt="{{ listing.title }}" 
+                             class="img-fluid rounded">
+                    </div>
+                    {% endif %}
+                    
+                    <div class="listing-details">
+                        <div class="price-info">
+                            {% if listing.sale_mode.value == 'fixed_price' %}
+                                <span class="price">{{ listing.fixed_price|format_price }}</span>
+                                {% if listing.is_negotiable %}
+                                    <span class="price-note">Negotiable</span>
+                                {% endif %}
+                            {% elif listing.sale_mode.value == 'free' %}
+                                <span class="price">Free</span>
+                            {% elif listing.sale_mode.value == 'auction' %}
+                                <span class="price">{{ listing.current_price|format_price }}</span>
+                                <span class="price-note">Current bid</span>
+                            {% elif listing.sale_mode.value == 'name_your_price' %}
+                                <span class="price">Make Offer</span>
+                                {% if listing.min_price %}
+                                    <span class="price-note">Min: {{ listing.min_price|format_price }}</span>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                        
+                        <div class="listing-meta">
+                            <small class="text-muted">
+                                <i data-feather="clock" class="icon-xs"></i>
+                                {% if listing.published_at %}
+                                    Published {{ listing.published_at|time_ago }}
+                                {% else %}
+                                    Created {{ listing.created_at|time_ago }}
+                                {% endif %}
+                            </small>
+                            {% if listing.bids %}
+                            <small class="text-muted ms-2">
+                                <i data-feather="users" class="icon-xs"></i>
+                                {{ listing.bids|length }} bid{% if listing.bids|length != 1 %}s{% endif %}
+                            </small>
+                            {% endif %}
+                        </div>
+
+                        {% if listing.sale_mode.value == 'auction' and listing.end_time and listing.status.value == 'active' %}
+                        <div class="auction-timer mt-2" data-end-time="{{ listing.end_time.isoformat() }}">
+                            <small class="text-primary">
+                                <i data-feather="clock" class="icon-xs"></i>
+                                <span class="timer-display">Calculating...</span>
+                            </small>
+                        </div>
+                        {% endif %}
+
+                        {% if listing.status.value == 'draft' %}
+                        <div class="mt-2">
+                            <button class="btn btn-primary btn-sm" onclick="publishListing({{ listing.id }})">
+                                <i data-feather="send" class="icon-xs me-1"></i>Publish
+                            </button>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <!-- Empty State -->
+            <div class="empty-state text-center py-5">
+                <div class="empty-icon mb-3">
+                    {% if status_filter == 'active' %}
+                        <i data-feather="activity" class="icon-lg text-muted"></i>
+                        <h3 class="h5 mb-2">No active listings</h3>
+                        <p class="text-muted mb-3">You don't have any active listings yet</p>
+                    {% elif status_filter == 'ended' %}
+                        <i data-feather="archive" class="icon-lg text-muted"></i>
+                        <h3 class="h5 mb-2">No ended listings</h3>
+                        <p class="text-muted mb-3">Your completed listings will appear here</p>
+                    {% elif status_filter == 'draft' %}
+                        <i data-feather="edit-3" class="icon-lg text-muted"></i>
+                        <h3 class="h5 mb-2">No draft listings</h3>
+                        <p class="text-muted mb-3">Your unpublished drafts will appear here</p>
+                    {% else %}
+                        <i data-feather="package" class="icon-lg text-muted"></i>
+                        <h3 class="h5 mb-2">No listings yet</h3>
+                        <p class="text-muted mb-3">Start by creating your first listing</p>
+                    {% endif %}
+                </div>
+                <a href="{{ url_for('create_listing') }}" class="btn btn-primary">
+                    <i data-feather="plus" class="icon me-2"></i>
+                    Create Listing
+                </a>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Bottom Navigation -->
+        <div class="bottom-nav">
+            <div class="container-fluid">
+                <div class="row text-center">
+                    <div class="col">
+                        <a href="{{ url_for('index') }}" class="nav-item">
+                            <i data-feather="home" class="icon"></i>
+                            <span>Home</span>
+                        </a>
+                    </div>
+                    <div class="col">
+                        <a href="{{ url_for('create_listing') }}" class="nav-item">
+                            <i data-feather="plus-circle" class="icon"></i>
+                            <span>Create</span>
+                        </a>
+                    </div>
+                    <div class="col">
+                        <a href="{{ url_for('my_listings') }}" class="nav-item active">
+                            <i data-feather="list" class="icon"></i>
+                            <span>My Items</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal fade" id="confirmModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Action</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="confirmMessage">Are you sure?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="confirmAction">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.29.0/feather.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="{{ url_for('static', filename='js/telegram-webapp.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            initMyListings();
+        });
+    </script>
+</body>
+</html>

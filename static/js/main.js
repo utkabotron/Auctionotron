@@ -1,0 +1,633 @@
+// Main application JavaScript
+
+// Global state
+let currentStep = 1;
+let totalSteps = 4;
+let uploadedPhotos = [];
+let selectedSaleMode = null;
+let listingData = {};
+
+// Utility functions
+function formatPrice(amount) {
+    if (!amount) return 'Free';
+    return `$${parseFloat(amount).toFixed(2)}`;
+}
+
+function showLoading(show = true) {
+    const modal = document.getElementById('loadingModal');
+    if (!modal) return;
+    
+    const bsModal = bootstrap.Modal.getOrCreateInstance(modal);
+    if (show) {
+        bsModal.show();
+    } else {
+        bsModal.hide();
+    }
+}
+
+function showToast(message, type = 'info') {
+    // Create toast if it doesn't exist
+    let toastContainer = document.getElementById('toastContainer');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'toastContainer';
+        toastContainer.className = 'position-fixed top-0 end-0 p-3';
+        toastContainer.style.zIndex = '1055';
+        document.body.appendChild(toastContainer);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-white bg-${type === 'error' ? 'danger' : 'primary'} border-0`;
+    toast.setAttribute('role', 'alert');
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    `;
+
+    toastContainer.appendChild(toast);
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+
+    // Remove from DOM after hiding
+    toast.addEventListener('hidden.bs.toast', () => {
+        toast.remove();
+    });
+}
+
+// API functions
+async function apiCall(url, options = {}) {
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            },
+            ...options
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('API call failed:', error);
+        throw error;
+    }
+}
+
+// Photo upload handling
+function initPhotoUpload() {
+    const photoInput = document.getElementById('photoInput');
+    const photoGrid = document.getElementById('photoGrid');
+    
+    if (!photoInput || !photoGrid) return;
+
+    photoInput.addEventListener('change', handlePhotoSelection);
+}
+
+function handlePhotoSelection(event) {
+    const files = Array.from(event.target.files);
+    const photoGrid = document.getElementById('photoGrid');
+    
+    files.forEach(file => {
+        if (uploadedPhotos.length >= 10) {
+            showToast('Maximum 10 photos allowed', 'error');
+            return;
+        }
+        
+        if (file.size > 16 * 1024 * 1024) {
+            showToast('File too large. Maximum 16MB allowed.', 'error');
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const photoData = {
+                file: file,
+                preview: e.target.result,
+                id: Date.now() + Math.random()
+            };
+            
+            uploadedPhotos.push(photoData);
+            renderPhotoGrid();
+        };
+        reader.readAsDataURL(file);
+    });
+    
+    // Clear input
+    event.target.value = '';
+}
+
+function renderPhotoGrid() {
+    const photoGrid = document.getElementById('photoGrid');
+    if (!photoGrid) return;
+    
+    if (uploadedPhotos.length === 0) {
+        photoGrid.style.display = 'none';
+        return;
+    }
+    
+    photoGrid.style.display = 'grid';
+    photoGrid.innerHTML = uploadedPhotos.map((photo, index) => `
+        <div class="photo-item" data-id="${photo.id}">
+            <img src="${photo.preview}" alt="Photo ${index + 1}">
+            <button type="button" class="photo-remove" onclick="removePhoto('${photo.id}')">
+                <i data-feather="x"></i>
+            </button>
+        </div>
+    `).join('');
+    
+    feather.replace();
+}
+
+function removePhoto(photoId) {
+    uploadedPhotos = uploadedPhotos.filter(photo => photo.id !== photoId);
+    renderPhotoGrid();
+    window.tgWebApp.hapticFeedback('impact');
+}
+
+// Step navigation
+function updateStepProgress() {
+    const stepIndicator = document.getElementById('stepIndicator');
+    const progressBar = document.getElementById('progressBar');
+    const nextBtn = document.getElementById('nextBtn');
+    const prevBtn = document.getElementById('prevBtn');
+    
+    if (stepIndicator) stepIndicator.textContent = `${currentStep}/${totalSteps}`;
+    if (progressBar) progressBar.style.width = `${(currentStep / totalSteps) * 100}%`;
+    
+    // Show/hide buttons
+    if (prevBtn) prevBtn.style.display = currentStep > 1 ? 'block' : 'none';
+    
+    if (nextBtn) {
+        if (currentStep === totalSteps) {
+            nextBtn.textContent = 'Publish Listing';
+            nextBtn.className = 'btn btn-success w-100';
+        } else {
+            nextBtn.textContent = 'Next';
+            nextBtn.className = 'btn btn-primary w-100';
+        }
+    }
+    
+    // Show current step
+    document.querySelectorAll('.step-content').forEach((step, index) => {
+        step.style.display = index + 1 === currentStep ? 'block' : 'none';
+    });
+}
+
+function nextStep() {
+    if (!validateCurrentStep()) return;
+    
+    if (currentStep === totalSteps) {
+        submitListing();
+        return;
+    }
+    
+    currentStep++;
+    updateStepProgress();
+    updatePreview();
+    window.tgWebApp.hapticFeedback('selection');
+    
+    // Auto-scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function prevStep() {
+    if (currentStep > 1) {
+        currentStep--;
+        updateStepProgress();
+        window.tgWebApp.hapticFeedback('selection');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+}
+
+function validateCurrentStep() {
+    switch (currentStep) {
+        case 1: // Photos
+            return true; // Photos are optional
+        case 2: // Details
+            return validateDetails();
+        case 3: // Sale mode
+            return validateSaleMode();
+        case 4: // Preview
+            return validatePreview();
+        default:
+            return true;
+    }
+}
+
+function validateDetails() {
+    const title = document.getElementById('title').value.trim();
+    if (!title) {
+        showToast('Please enter a title for your listing', 'error');
+        document.getElementById('title').focus();
+        return false;
+    }
+    return true;
+}
+
+function validateSaleMode() {
+    if (!selectedSaleMode) {
+        showToast('Please select a sale mode', 'error');
+        return false;
+    }
+    
+    // Validate mode-specific fields
+    switch (selectedSaleMode) {
+        case 'fixed_price':
+            const fixedPrice = document.getElementById('fixedPrice').value;
+            if (!fixedPrice || parseFloat(fixedPrice) <= 0) {
+                showToast('Please enter a valid price', 'error');
+                document.getElementById('fixedPrice').focus();
+                return false;
+            }
+            break;
+        case 'auction':
+            const startPrice = document.getElementById('startPrice').value;
+            if (!startPrice || parseFloat(startPrice) <= 0) {
+                showToast('Please enter a valid starting price', 'error');
+                document.getElementById('startPrice').focus();
+                return false;
+            }
+            break;
+    }
+    
+    return true;
+}
+
+function validatePreview() {
+    const acceptTerms = document.getElementById('acceptTerms').checked;
+    if (!acceptTerms) {
+        showToast('Please accept the terms to continue', 'error');
+        return false;
+    }
+    return true;
+}
+
+// Sale mode handling
+function initSaleModeSelection() {
+    document.querySelectorAll('.mode-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const mode = card.dataset.mode;
+            selectSaleMode(mode);
+        });
+    });
+}
+
+function selectSaleMode(mode) {
+    selectedSaleMode = mode;
+    
+    // Update UI
+    document.querySelectorAll('.mode-card').forEach(card => {
+        card.classList.toggle('selected', card.dataset.mode === mode);
+    });
+    
+    // Show/hide mode settings
+    const modeSettings = document.getElementById('modeSettings');
+    const modeConfigs = document.querySelectorAll('.mode-config');
+    
+    modeConfigs.forEach(config => config.style.display = 'none');
+    
+    if (mode !== 'free') {
+        modeSettings.style.display = 'block';
+        const configId = mode + 'Config';
+        const config = document.getElementById(configId);
+        if (config) config.style.display = 'block';
+    } else {
+        modeSettings.style.display = 'none';
+    }
+    
+    window.tgWebApp.hapticFeedback('selection');
+}
+
+// Preview generation
+function updatePreview() {
+    if (currentStep !== 4) return;
+    
+    const previewContainer = document.getElementById('listingPreview');
+    if (!previewContainer) return;
+    
+    collectListingData();
+    
+    const preview = generatePreviewHTML();
+    previewContainer.innerHTML = preview;
+    
+    feather.replace();
+}
+
+function collectListingData() {
+    listingData = {
+        title: document.getElementById('title').value.trim(),
+        description: document.getElementById('description').value.trim(),
+        category: document.getElementById('category').value,
+        condition: document.getElementById('condition').value,
+        sale_mode: selectedSaleMode,
+        photos: uploadedPhotos
+    };
+    
+    // Mode-specific data
+    switch (selectedSaleMode) {
+        case 'fixed_price':
+            listingData.fixed_price = document.getElementById('fixedPrice').value;
+            listingData.is_negotiable = document.getElementById('isNegotiable').checked;
+            break;
+        case 'name_your_price':
+            listingData.min_price = document.getElementById('minPrice').value;
+            listingData.private_offers = document.getElementById('privateOffers').checked;
+            break;
+        case 'auction':
+            listingData.start_price = document.getElementById('startPrice').value;
+            listingData.bid_step = document.getElementById('bidStep').value;
+            listingData.end_time = document.getElementById('endDate').value;
+            break;
+    }
+    
+    listingData.allow_queue = document.getElementById('allowQueue').checked;
+}
+
+function generatePreviewHTML() {
+    const photos = uploadedPhotos.length > 0 ? `
+        <div class="listing-image mb-3">
+            <img src="${uploadedPhotos[0].preview}" alt="${listingData.title}" class="img-fluid rounded">
+            ${uploadedPhotos.length > 1 ? `<div class="photo-count"><i data-feather="image"></i> ${uploadedPhotos.length}</div>` : ''}
+        </div>
+    ` : '';
+    
+    let priceInfo = '';
+    switch (selectedSaleMode) {
+        case 'fixed_price':
+            priceInfo = `
+                <div class="price">${formatPrice(listingData.fixed_price)}</div>
+                ${listingData.is_negotiable ? '<div class="price-note">Negotiable</div>' : ''}
+            `;
+            break;
+        case 'free':
+            priceInfo = '<div class="price">Free</div>';
+            break;
+        case 'name_your_price':
+            priceInfo = `
+                <div class="price">Make Offer</div>
+                ${listingData.min_price ? `<div class="price-note">Min: ${formatPrice(listingData.min_price)}</div>` : ''}
+            `;
+            break;
+        case 'auction':
+            priceInfo = `
+                <div class="price">Starting at ${formatPrice(listingData.start_price)}</div>
+                <div class="price-note">Auction</div>
+            `;
+            break;
+    }
+    
+    return `
+        <div class="listing-card">
+            <div class="listing-header">
+                <h4 class="listing-title">${listingData.title}</h4>
+                <span class="status-chip status-draft">Draft</span>
+            </div>
+            
+            ${photos}
+            
+            <div class="listing-details">
+                <div class="price-info">
+                    ${priceInfo}
+                </div>
+                
+                ${listingData.description ? `
+                    <div class="listing-description mt-2">
+                        <p class="text-muted mb-0">${listingData.description}</p>
+                    </div>
+                ` : ''}
+                
+                <div class="listing-meta mt-2">
+                    ${listingData.category ? `<span class="badge bg-secondary me-2">${listingData.category}</span>` : ''}
+                    ${listingData.condition ? `<span class="badge bg-secondary">${listingData.condition}</span>` : ''}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Listing submission
+async function submitListing() {
+    try {
+        showLoading(true);
+        collectListingData();
+        
+        // Create listing
+        const listing = await apiCall('/api/listings', {
+            method: 'POST',
+            body: JSON.stringify(listingData)
+        });
+        
+        // Upload photos if any
+        if (uploadedPhotos.length > 0) {
+            await uploadPhotos(listing.listing_id);
+        }
+        
+        // Publish listing
+        await apiCall(`/api/listings/${listing.listing_id}/publish`, {
+            method: 'POST'
+        });
+        
+        showLoading(false);
+        window.tgWebApp.hapticFeedback('notification');
+        showToast('Listing created successfully!', 'success');
+        
+        // Redirect to listings page
+        setTimeout(() => {
+            window.location.href = '/my-listings';
+        }, 1500);
+        
+    } catch (error) {
+        showLoading(false);
+        console.error('Error submitting listing:', error);
+        showToast('Failed to create listing. Please try again.', 'error');
+    }
+}
+
+async function uploadPhotos(listingId) {
+    const formData = new FormData();
+    
+    uploadedPhotos.forEach((photo, index) => {
+        formData.append(`photo_${index}`, photo.file);
+    });
+    
+    const response = await fetch(`/api/listings/${listingId}/photos`, {
+        method: 'POST',
+        body: formData
+    });
+    
+    if (!response.ok) {
+        throw new Error('Photo upload failed');
+    }
+    
+    return await response.json();
+}
+
+// Create listing initialization
+function initCreateListing() {
+    initPhotoUpload();
+    initSaleModeSelection();
+    
+    // Button handlers
+    const nextBtn = document.getElementById('nextBtn');
+    const prevBtn = document.getElementById('prevBtn');
+    
+    if (nextBtn) nextBtn.addEventListener('click', nextStep);
+    if (prevBtn) prevBtn.addEventListener('click', prevStep);
+    
+    // Initialize first step
+    updateStepProgress();
+    
+    // Set minimum end date for auctions
+    const endDateInput = document.getElementById('endDate');
+    if (endDateInput) {
+        const now = new Date();
+        now.setHours(now.getHours() + 1); // Minimum 1 hour from now
+        endDateInput.min = now.toISOString().slice(0, 16);
+    }
+}
+
+// My listings page functionality
+function initMyListings() {
+    // Filter handling
+    document.querySelectorAll('input[name="statusFilter"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                const status = e.target.id.replace('filter', '').toLowerCase();
+                const url = new URL(window.location);
+                if (status === 'all') {
+                    url.searchParams.delete('status');
+                } else {
+                    url.searchParams.set('status', status);
+                }
+                window.location.href = url.toString();
+            }
+        });
+    });
+    
+    // Initialize auction timers
+    initAuctionTimers();
+}
+
+function initAuctionTimers() {
+    document.querySelectorAll('.auction-timer').forEach(timer => {
+        const endTime = new Date(timer.dataset.endTime);
+        updateTimer(timer, endTime);
+        
+        // Update every second
+        setInterval(() => updateTimer(timer, endTime), 1000);
+    });
+}
+
+function updateTimer(timerElement, endTime) {
+    const now = new Date();
+    const diff = endTime - now;
+    
+    const display = timerElement.querySelector('.timer-display');
+    if (!display) return;
+    
+    if (diff <= 0) {
+        display.textContent = 'Auction ended';
+        timerElement.classList.add('text-danger');
+        return;
+    }
+    
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    if (hours > 0) {
+        display.textContent = `${hours}h ${minutes}m remaining`;
+    } else if (minutes > 0) {
+        display.textContent = `${minutes}m ${seconds}s remaining`;
+    } else {
+        display.textContent = `${seconds}s remaining`;
+        timerElement.classList.add('text-warning');
+    }
+}
+
+// Listing actions
+async function publishListing(listingId) {
+    try {
+        await apiCall(`/api/listings/${listingId}/publish`, {
+            method: 'POST'
+        });
+        
+        showToast('Listing published successfully!', 'success');
+        setTimeout(() => location.reload(), 1000);
+        
+    } catch (error) {
+        showToast('Failed to publish listing', 'error');
+    }
+}
+
+async function closeListing(listingId) {
+    window.tgWebApp.showConfirm(
+        'Are you sure you want to close this listing?',
+        async (confirmed) => {
+            if (!confirmed) return;
+            
+            try {
+                await apiCall(`/api/listings/${listingId}/close`, {
+                    method: 'POST'
+                });
+                
+                showToast('Listing closed successfully!', 'success');
+                setTimeout(() => location.reload(), 1000);
+                
+            } catch (error) {
+                showToast('Failed to close listing', 'error');
+            }
+        }
+    );
+}
+
+function editListing(listingId) {
+    // For now, redirect to create page (could be enhanced to pre-fill data)
+    window.location.href = '/create';
+}
+
+function deleteListing(listingId) {
+    window.tgWebApp.showConfirm(
+        'Are you sure you want to delete this listing? This action cannot be undone.',
+        async (confirmed) => {
+            if (!confirmed) return;
+            
+            try {
+                await apiCall(`/api/listings/${listingId}`, {
+                    method: 'DELETE'
+                });
+                
+                showToast('Listing deleted successfully!', 'success');
+                setTimeout(() => location.reload(), 1000);
+                
+            } catch (error) {
+                showToast('Failed to delete listing', 'error');
+            }
+        }
+    );
+}
+
+// Initialize Feather icons on page load
+document.addEventListener('DOMContentLoaded', () => {
+    feather.replace();
+});
+
+// Handle Telegram back button
+document.addEventListener('telegram-back-button-click', () => {
+    if (window.location.pathname === '/create' && currentStep > 1) {
+        prevStep();
+    } else {
+        history.back();
+    }
+});
+
+// Show back button on create listing page
+if (window.location.pathname === '/create') {
+    window.tgWebApp.showBackButton();
+}
