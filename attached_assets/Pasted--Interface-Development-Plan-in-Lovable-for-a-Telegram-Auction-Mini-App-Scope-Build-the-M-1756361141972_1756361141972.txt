@@ -1,0 +1,183 @@
+# Interface Development Plan in Lovable for a Telegram Auction Mini-App
+
+## Scope
+
+* Build the Mini-App UI in Lovable.
+* Follow Telegram Mini Apps guidelines. Single font. Minimal colors with blue accent.
+* Use Telegram WebApp API for auth, theme, buttons, haptics.
+* Connect to Supabase via backend API. No secrets in the client.
+
+## Phase 1: Preparation
+
+1. **Guidelines**
+
+   * Read Telegram Mini Apps docs. Respect `themeParams`, `colorScheme`, `viewport`.
+   * Use `WebApp.MainButton` and `BackButton` for key actions.
+2. **User flows**
+
+   * Map: create listing → choose mode → preview → publish.
+   * Manage listings: filter, edit, close, delete.
+3. **Low-fi wireframes in Lovable**
+
+   * Create pages and shared components. Define states and actions.
+
+## Phase 2: Core Screens in Lovable
+
+1. **Home**
+
+   * “Create listing” CTA.
+   * User’s active listings with status chips.
+   * Simple nav (tabs or top buttons).
+2. **Create Listing Wizard**
+
+   * **Photos**
+
+     * Multi-upload (up to 1–10). Thumbs with reorder and crop.
+   * **Details**
+
+     * Title, description. Optional: condition, category.
+   * **Sale Mode**
+
+     * Four cards: Fixed price, Free, “Name your price”, Auction.
+     * Card click sets mode and reveals settings.
+3. **Mode Settings**
+
+   * **Fixed price**
+
+     * Price input (currency label). Toggles: “Negotiable”, “Queue/hold”.
+   * **Free**
+
+     * Toggle “Queue/hold”. Optional notes.
+   * **Name your price**
+
+     * Optional min price. Privacy for offers.
+   * **Auction**
+
+     * Start price, bid step. End date/time pickers. Toggle “Queue/hold”.
+4. **Preview & Publish**
+
+   * Telegram-style card preview.
+   * “Publish to chat” button.
+   * If multiple targets exist, select chat.
+5. **My Listings**
+
+   * List with filters: active, ended, sold.
+   * Actions: close, edit (pre-bid only), delete.
+
+## Phase 3: WebApp API Integration (Lovable + custom code blocks)
+
+1. **Auth**
+
+   * On load: read `Telegram.WebApp.initDataUnsafe`.
+   * Send `initData` to backend for verification. Store session token.
+2. **Bot interaction**
+
+   * Use backend endpoints to create/update listings.
+   * Receive callback results and update UI state.
+3. **Supabase**
+
+   * Access via backend API (Python or Node).
+   * Client only calls your backend. No Supabase keys in Lovable.
+
+## Phase 4: UI Components (Lovable)
+
+1. **Base**
+
+   * Buttons: primary, secondary, text.
+   * Inputs: text, number, date/time.
+   * Switches and checkboxes.
+   * Item cards.
+2. **Composite**
+
+   * Image carousel with swipe.
+   * Auction timer (mm\:ss remaining).
+   * Status chip (Active, Ending soon, Closed, Sold).
+   * Bid control (+ step, confirm).
+3. **Motion**
+
+   * Subtle transitions between steps.
+   * Loading spinners on network calls.
+
+## Phase 5: Testing and Optimization
+
+1. **UI tests**
+
+   * Mobile first. Different DPIs.
+   * Check flows end-to-end.
+   * Accessibility basics: focus, labels, hit areas.
+2. **Performance**
+
+   * Compress images on client before upload.
+   * Cache last state in `CloudStorage` and local state.
+3. **Polish**
+
+   * Unify spacing, radii, shadows.
+   * Match Telegram theming via `themeParams`.
+
+## Phase 6: Integration and Launch
+
+1. **Export from Lovable**
+
+   * Export HTML/CSS/JS. Keep code blocks modular.
+2. **Backend wiring**
+
+   * Endpoints: auth verify, create listing, upload, publish, bids, status updates.
+   * Test with real Telegram bot.
+3. **Release**
+
+   * Host static build. Set Mini-App URL in BotFather.
+   * Add analytics (simple event logging in backend).
+   * Collect feedback.
+
+## Technical Notes
+
+* **Telegram styles**
+
+  * Read `WebApp.themeParams` to set colors. Respect light/dark.
+  * Use system font stack.
+* **Mobile**
+
+  * Safe areas. Avoid fixed vh traps. Use `expand()` on open.
+* **WebApp features**
+
+  * `MainButton` for “Publish”, “Place bid”.
+  * `HapticFeedback.impactOccurred` on bid.
+  * `CloudStorage` for draft autosave.
+
+## Lovable-Specific Adaptation
+
+* **Project structure**
+
+  * Pages: Home, Create (Photos, Details, Mode), Preview, My Listings.
+  * Global state store: `user`, `session`, `draftListing`, `listings`.
+  * Shared components: `TgCard`, `PhotoGrid`, `Timer`, `PriceInput`, `ModeCard`, `StatusChip`.
+* **Data sources**
+
+  * HTTP data source to your backend with auth header.
+  * Actions: `fetchListings`, `createListing`, `uploadPhoto`, `publish`, `placeBid`, `closeListing`.
+* **Bindings**
+
+  * Form fields bound to `draftListing.*`.
+  * Disable buttons while `action.loading`.
+* **Validation**
+
+  * Synchronous checks in Lovable before API calls.
+  * Show inline errors under inputs.
+* **Theming**
+
+  * Create a theme object from `themeParams`. Bind to CSS vars.
+* **File handling**
+
+  * Client-side resize to max width 1280px before upload.
+* **Timers**
+
+  * Local countdown with server time offset from `/time`.
+  * Extend by anti-snipe rule on backend. UI listens to updates.
+
+## Deliverables
+
+* Lovable project with pages, components, bindings, and actions.
+* Theme adapter for Telegram `themeParams`.
+* Minimal JS code blocks for WebApp API and timers.
+* API contract (OpenAPI or brief spec) for backend endpoints.
+* Test checklist for each flow.
