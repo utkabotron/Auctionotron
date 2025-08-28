@@ -317,12 +317,17 @@ function updatePreview() {
 }
 
 function collectListingData() {
+    const titleValue = document.getElementById('title').value.trim();
+    const descriptionValue = document.getElementById('description').value.trim();
+    
     listingData = {
-        title: document.getElementById('title').value.trim(),
-        description: document.getElementById('description').value.trim(),
+        title: titleValue,
+        description: descriptionValue,
         sale_mode: selectedSaleMode,
         photos: uploadedPhotos
     };
+    
+    console.log('Collected listing data:', listingData);
     
     // Mode-specific data
     switch (selectedSaleMode) {
