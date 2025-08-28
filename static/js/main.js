@@ -2,7 +2,7 @@
 
 // Global state
 let currentStep = 1;
-let totalSteps = 4;
+let totalSteps = 3;
 let uploadedPhotos = [];
 let selectedSaleMode = null;
 let listingData = {};
@@ -10,7 +10,7 @@ let listingData = {};
 // Utility functions
 function formatPrice(amount) {
     if (!amount) return 'Free';
-    return `$${parseFloat(amount).toFixed(2)}`;
+    return `₪${parseInt(amount)}`;
 }
 
 function showLoading(show = true) {
@@ -147,7 +147,11 @@ function renderPhotoGrid() {
 function removePhoto(photoId) {
     uploadedPhotos = uploadedPhotos.filter(photo => photo.id !== photoId);
     renderPhotoGrid();
-    window.tgWebApp.hapticFeedback('impact');
+    try {
+        window.tgWebApp.hapticFeedback('impact');
+    } catch(e) {
+        // Haptic feedback not available, continue without it
+    }
 }
 
 // Step navigation
@@ -207,14 +211,12 @@ function prevStep() {
 
 function validateCurrentStep() {
     switch (currentStep) {
-        case 1: // Photos
-            return true; // Photos are optional
-        case 2: // Details
+        case 1: // Photos & Details
             return validateDetails();
-        case 3: // Sale mode
+        case 2: // Sale mode
             return validateSaleMode();
-        case 4: // Preview
-            return validatePreview();
+        case 3: // Preview
+            return true; // No terms checkbox to validate
         default:
             return true;
     }
@@ -260,12 +262,7 @@ function validateSaleMode() {
 }
 
 function validatePreview() {
-    const acceptTerms = document.getElementById('acceptTerms').checked;
-    if (!acceptTerms) {
-        showToast('Please accept the terms to continue', 'error');
-        return false;
-    }
-    return true;
+    return true; // No validation needed for preview step
 }
 
 // Sale mode handling
@@ -306,7 +303,7 @@ function selectSaleMode(mode) {
 
 // Preview generation
 function updatePreview() {
-    if (currentStep !== 4) return;
+    if (currentStep !== 3) return;
     
     const previewContainer = document.getElementById('listingPreview');
     if (!previewContainer) return;
@@ -323,8 +320,6 @@ function collectListingData() {
     listingData = {
         title: document.getElementById('title').value.trim(),
         description: document.getElementById('description').value.trim(),
-        category: document.getElementById('category').value,
-        condition: document.getElementById('condition').value,
         sale_mode: selectedSaleMode,
         photos: uploadedPhotos
     };
@@ -346,7 +341,7 @@ function collectListingData() {
             break;
     }
     
-    listingData.allow_queue = document.getElementById('allowQueue').checked;
+    listingData.allow_queue = false;
 }
 
 function generatePreviewHTML() {

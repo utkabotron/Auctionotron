@@ -112,7 +112,7 @@ def format_price(amount):
     """Format price for display"""
     if amount is None:
         return "Free"
-    return f"${float(amount):.2f}"
+    return f"₪{int(float(amount))}"
 
 def calculate_time_remaining(end_time):
     """Calculate time remaining for auction"""
