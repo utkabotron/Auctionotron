@@ -631,3 +631,29 @@ document.addEventListener('telegram-back-button-click', () => {
 if (window.location.pathname === '/create') {
     window.tgWebApp.showBackButton();
 }
+
+// Fix button clicks - ensure they work without WebApp API
+document.addEventListener('DOMContentLoaded', function() {
+    // Make all buttons and links clickable
+    document.querySelectorAll('button, a').forEach(element => {
+        element.style.cursor = 'pointer';
+        element.style.userSelect = 'none';
+        
+        // Add click event handling
+        element.addEventListener('click', function(e) {
+            // Add visual feedback
+            this.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                this.style.transform = 'scale(1)';
+            }, 100);
+        });
+    });
+    
+    // Fix create listing button clicks specifically
+    document.querySelectorAll('a[href*="create"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            window.location.href = this.href;
+        });
+    });
+});
