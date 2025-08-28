@@ -200,13 +200,25 @@
         <!-- Action Buttons -->
         <div class="action-buttons">
             <div class="container-fluid">
-                <div class="row">
+                <div class="row" id="normalButtons">
                     <div class="col-auto">
                         <button type="button" class="btn btn-outline-secondary" id="prevBtn" 
                                 style="display: none;">Previous</button>
                     </div>
                     <div class="col">
                         <button type="button" class="btn btn-primary w-100" id="nextBtn">Next</button>
+                    </div>
+                </div>
+                <!-- Preview step buttons -->
+                <div class="row" id="previewButtons" style="display: none;">
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-outline-secondary" id="prevBtnPreview">Previous</button>
+                    </div>
+                    <div class="col-6">
+                        <button type="button" class="btn btn-outline-primary w-100" id="saveDraftBtn">Save Draft</button>
+                    </div>
+                    <div class="col">
+                        <button type="button" class="btn btn-primary w-100" id="publishBtn">Publish</button>
                     </div>
                 </div>
             </div>

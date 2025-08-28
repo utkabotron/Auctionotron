@@ -164,14 +164,22 @@ function updateStepProgress() {
     if (stepIndicator) stepIndicator.textContent = `${currentStep}/${totalSteps}`;
     if (progressBar) progressBar.style.width = `${(currentStep / totalSteps) * 100}%`;
     
-    // Show/hide buttons
-    if (prevBtn) prevBtn.style.display = currentStep > 1 ? 'block' : 'none';
+    // Update buttons based on step
+    const normalButtons = document.getElementById('normalButtons');
+    const previewButtons = document.getElementById('previewButtons');
     
-    if (nextBtn) {
-        if (currentStep === totalSteps) {
-            nextBtn.textContent = 'Publish Listing';
-            nextBtn.className = 'btn btn-success w-100';
-        } else {
+    if (currentStep === totalSteps) {
+        // Preview step - show special buttons
+        if (normalButtons) normalButtons.style.display = 'none';
+        if (previewButtons) previewButtons.style.display = 'flex';
+    } else {
+        // Normal steps - show regular buttons
+        if (normalButtons) normalButtons.style.display = 'flex';
+        if (previewButtons) previewButtons.style.display = 'none';
+        
+        if (prevBtn) prevBtn.style.display = currentStep > 1 ? 'block' : 'none';
+        
+        if (nextBtn) {
             nextBtn.textContent = 'Next';
             nextBtn.className = 'btn btn-primary w-100';
         }
@@ -191,18 +199,15 @@ function updateStepProgress() {
 function nextStep() {
     if (!validateCurrentStep()) return;
     
-    if (currentStep === totalSteps) {
-        submitListing();
-        return;
+    if (currentStep < totalSteps) {
+        currentStep++;
+        updateStepProgress();
+        updatePreview();
+        window.tgWebApp.hapticFeedback('selection');
+        
+        // Auto-scroll to top
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-    
-    currentStep++;
-    updateStepProgress();
-    updatePreview();
-    window.tgWebApp.hapticFeedback('selection');
-    
-    // Auto-scroll to top
-    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function prevStep() {
@@ -455,15 +460,48 @@ async function submitListing() {
         window.tgWebApp.hapticFeedback('notification');
         showToast('Listing created successfully!', 'success');
         
-        // Redirect to listings page
+        // Redirect to main page
         setTimeout(() => {
-            window.location.href = '/my-listings';
+            window.location.href = '/';
         }, 1500);
         
     } catch (error) {
         showLoading(false);
         console.error('Error submitting listing:', error);
         showToast('Failed to create listing. Please try again.', 'error');
+    }
+}
+
+// Save as draft
+async function saveDraft() {
+    try {
+        showLoading(true);
+        collectListingData();
+        
+        // Create listing (stays as draft)
+        const listing = await apiCall('/api/listings', {
+            method: 'POST',
+            body: JSON.stringify(listingData)
+        });
+        
+        // Upload photos if any
+        if (uploadedPhotos.length > 0) {
+            await uploadPhotos(listing.listing_id);
+        }
+        
+        showLoading(false);
+        window.tgWebApp.hapticFeedback('notification');
+        showToast('Draft saved successfully!', 'success');
+        
+        // Redirect to main page
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 1500);
+        
+    } catch (error) {
+        showLoading(false);
+        console.error('Error saving draft:', error);
+        showToast('Failed to save draft. Please try again.', 'error');
     }
 }
 
@@ -494,9 +532,15 @@ function initCreateListing() {
     // Button handlers
     const nextBtn = document.getElementById('nextBtn');
     const prevBtn = document.getElementById('prevBtn');
+    const prevBtnPreview = document.getElementById('prevBtnPreview');
+    const saveDraftBtn = document.getElementById('saveDraftBtn');
+    const publishBtn = document.getElementById('publishBtn');
     
     if (nextBtn) nextBtn.addEventListener('click', nextStep);
     if (prevBtn) prevBtn.addEventListener('click', prevStep);
+    if (prevBtnPreview) prevBtnPreview.addEventListener('click', prevStep);
+    if (saveDraftBtn) saveDraftBtn.addEventListener('click', saveDraft);
+    if (publishBtn) publishBtn.addEventListener('click', submitListing);
     
     // Initialize first step
     updateStepProgress();
@@ -585,24 +629,21 @@ async function publishListing(listingId) {
 }
 
 async function closeListing(listingId) {
-    window.tgWebApp.showConfirm(
-        'Are you sure you want to close this listing?',
-        async (confirmed) => {
-            if (!confirmed) return;
-            
-            try {
-                await apiCall(`/api/listings/${listingId}/close`, {
-                    method: 'POST'
-                });
-                
-                showToast('Listing closed successfully!', 'success');
-                setTimeout(() => location.reload(), 1000);
-                
-            } catch (error) {
-                showToast('Failed to close listing', 'error');
-            }
-        }
-    );
+    const confirmed = confirm('Are you sure you want to close this listing?');
+    if (!confirmed) return;
+    
+    try {
+        await apiCall(`/api/listings/${listingId}/close`, {
+            method: 'POST'
+        });
+        
+        showToast('Listing closed successfully!', 'success');
+        setTimeout(() => location.reload(), 1000);
+        
+    } catch (error) {
+        console.error('Error closing listing:', error);
+        showToast('Failed to close listing', 'error');
+    }
 }
 
 function editListing(listingId) {
