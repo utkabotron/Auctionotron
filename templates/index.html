@@ -16,6 +16,9 @@
                 <div class="row align-items-center">
                     <div class="col">
                         <h1 class="app-title">Auction</h1>
+                        {% if current_user %}
+                        <p class="user-greeting mb-0">Привет, {{ current_user.first_name }}!</p>
+                        {% endif %}
                     </div>
                     <div class="col-auto">
                         <a href="{{ url_for('create_listing') }}" class="btn btn-primary btn-sm">
