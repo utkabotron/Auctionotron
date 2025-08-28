@@ -23,9 +23,9 @@ class User(db.Model):
     last_name = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Relationship
-    listings = db.relationship('Listing', backref='seller', lazy=True)
-    bids = db.relationship('Bid', backref='bidder', lazy=True)
+    # Relationships - specify foreign keys to avoid ambiguity
+    listings = db.relationship('Listing', foreign_keys='Listing.seller_id', backref='seller', lazy=True)
+    bids = db.relationship('Bid', foreign_keys='Bid.bidder_id', backref='bidder', lazy=True)
 
 class Listing(db.Model):
     id = db.Column(db.Integer, primary_key=True)

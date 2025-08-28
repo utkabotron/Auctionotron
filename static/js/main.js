@@ -181,6 +181,11 @@ function updateStepProgress() {
     document.querySelectorAll('.step-content').forEach((step, index) => {
         step.style.display = index + 1 === currentStep ? 'block' : 'none';
     });
+    
+    // Update preview if on preview step
+    if (currentStep === 3) {
+        updatePreview();
+    }
 }
 
 function nextStep() {
@@ -291,7 +296,20 @@ function selectSaleMode(mode) {
     
     if (mode !== 'free') {
         modeSettings.style.display = 'block';
-        const configId = mode + 'Config';
+        let configId;
+        switch (mode) {
+            case 'fixed_price':
+                configId = 'fixedPriceConfig';
+                break;
+            case 'name_your_price':
+                configId = 'nameYourPriceConfig';
+                break;
+            case 'auction':
+                configId = 'auctionConfig';
+                break;
+            default:
+                configId = mode + 'Config';
+        }
         const config = document.getElementById(configId);
         if (config) config.style.display = 'block';
     } else {
