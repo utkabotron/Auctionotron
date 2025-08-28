@@ -128,13 +128,17 @@ def create_listing_api():
     if user_id == 1:
         test_user = User.query.get(1)
         if not test_user:
-            test_user = User(
-                telegram_id=12345,
-                first_name='Test User',
-                username='testuser'
-            )
-            db.session.add(test_user)
-            db.session.commit()
+            try:
+                test_user = User(
+                    telegram_id=12345,
+                    first_name='Test User',
+                    username='testuser'
+                )
+                db.session.add(test_user)
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                app.logger.error(f"Error creating test user: {e}")
     
     try:
         data = request.get_json()
