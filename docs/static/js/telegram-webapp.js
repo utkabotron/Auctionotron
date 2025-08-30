@@ -23,6 +23,10 @@ class TelegramWebApp {
     init() {
         if (!this.webapp) {
             console.warn('Telegram WebApp API not available');
+            // Enable web preview mode for GitHub Pages or local browser
+            try {
+                document.body.classList.add('web-preview');
+            } catch (e) {}
             return;
         }
 

@@ -595,3 +595,46 @@ html, body {
         transition-duration: 0.01ms !important;
     }
 }
+
+/* Web preview (when not inside Telegram) */
+body.web-preview {
+    background: #f3f4f6;
+}
+
+body.web-preview .telegram-app {
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100dvh;
+    background: var(--tg-theme-bg-color);
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    overflow: clip;
+}
+
+/* Keep header inside the centered container */
+body.web-preview .app-header {
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(480px, 100%);
+}
+
+/* Fix action bar to be centered and same width as app */
+body.web-preview .action-buttons {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: min(480px, 100%);
+    border-bottom-left-radius: 16px;
+    border-bottom-right-radius: 16px;
+}
+
+/* Nicer look for progress bar area on web */
+body.web-preview .progress-container {
+    max-width: 480px;
+    margin: 0 auto;
+}
+
+/* Prevent the floating API badge overlapping rounded corner */
+body.web-preview #cfgBtn {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px + var(--spacing-md));
+}
