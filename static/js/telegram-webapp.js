@@ -1,4 +1,17 @@
 // Telegram WebApp API integration
+// Helper: determine API base URL (supports running frontend from another domain like GitHub Pages)
+function __getApiBase() {
+    try {
+        // 1) Explicit global override
+        if (typeof window !== 'undefined' && window.__API_BASE_URL__) return window.__API_BASE_URL__;
+        // 2) Query param api_base
+        const url = new URL(window.location.href);
+        const qp = url.searchParams.get('api_base');
+        if (qp) return qp.replace(/\/$/, '');
+    } catch (e) {}
+    // 3) Default: same origin
+    return '';
+}
 class TelegramWebApp {
     constructor() {
         this.webapp = window.Telegram?.WebApp;
@@ -175,7 +188,7 @@ class TelegramWebApp {
         }
 
         try {
-            const response = await fetch('/api/auth', {
+            const response = await fetch(`${__getApiBase()}/api/auth`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

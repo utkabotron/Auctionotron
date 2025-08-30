@@ -6,11 +6,35 @@ let totalSteps = 3;
 let uploadedPhotos = [];
 let selectedSaleMode = null;
 let listingData = {};
+let isEditMode = false;
+let editingListingId = null;
 
 // Utility functions
 function formatPrice(amount) {
     if (!amount) return 'Free';
     return `₪${parseInt(amount)}`;
+}
+
+// Layout helpers
+function updateActionBarPadding() {
+    const app = document.querySelector('.telegram-app');
+    const bar = document.querySelector('.action-buttons');
+    if (!app || !bar) return;
+    const h = bar.offsetHeight || 96;
+    // Set CSS var on the container so .has-action-buttons uses actual height
+    app.style.setProperty('--action-bar-height', h + 'px');
+}
+
+function adjustPreviewButtonsForEdit() {
+    const saveDraftCol = document.getElementById('saveDraftCol');
+    const prevCol = document.getElementById('prevCol');
+    const publishCol = document.getElementById('publishCol');
+    const saveDraftBtn = document.getElementById('saveDraftBtn');
+    if (saveDraftBtn) saveDraftBtn.style.display = 'none';
+    if (saveDraftCol) saveDraftCol.style.display = 'none';
+    // Make other two columns equal width
+    if (prevCol) prevCol.className = prevCol.className.replace(/col-\d+/g, 'col-6');
+    if (publishCol) publishCol.className = publishCol.className.replace(/col-\d+/g, 'col-6');
 }
 
 function showLoading(show = true) {
@@ -57,9 +81,20 @@ function showToast(message, type = 'info') {
 }
 
 // API functions
+function __getApiBase() {
+    try {
+        if (typeof window !== 'undefined' && window.__API_BASE_URL__) return window.__API_BASE_URL__;
+        const url = new URL(window.location.href);
+        const qp = url.searchParams.get('api_base');
+        if (qp) return qp.replace(/\/$/, '');
+    } catch (e) {}
+    return '';
+}
 async function apiCall(url, options = {}) {
     try {
-        const response = await fetch(url, {
+        const base = __getApiBase();
+        const fullUrl = url.startsWith('http') ? url : `${base}${url}`;
+        const response = await fetch(fullUrl, {
             headers: {
                 'Content-Type': 'application/json',
                 ...options.headers,
@@ -117,6 +152,13 @@ function handlePhotoSelection(event) {
             
             uploadedPhotos.push(photoData);
             renderPhotoGrid();
+            // Ensure padding recalculated and scroll reaches the end after images render
+            requestAnimationFrame(() => {
+                updateActionBarPadding();
+                setTimeout(() => {
+                    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+                }, 0);
+            });
         };
         reader.readAsDataURL(file);
     });
@@ -131,6 +173,8 @@ function renderPhotoGrid() {
     
     if (uploadedPhotos.length === 0) {
         photoGrid.style.display = 'none';
+        // Update padding in case grid collapsed
+        updateActionBarPadding();
         return;
     }
     
@@ -145,6 +189,25 @@ function renderPhotoGrid() {
     `).join('');
     
     feather.replace();
+    // After DOM update, ensure layout padding accounts for bar height when images finish loading
+    const imgs = photoGrid.querySelectorAll('img');
+    let remaining = imgs.length;
+    const finalize = () => {
+        updateActionBarPadding();
+    };
+    if (remaining === 0) {
+        finalize();
+    } else {
+        imgs.forEach(img => {
+            if (img.complete) {
+                if (--remaining === 0) finalize();
+            } else {
+                img.addEventListener('load', () => {
+                    if (--remaining === 0) finalize();
+                }, { once: true });
+            }
+        });
+    }
 }
 
 function removePhoto(photoId) {
@@ -443,30 +506,42 @@ async function submitListing() {
         showLoading(true);
         collectListingData();
         
-        // Create listing
-        const listing = await apiCall('/api/listings', {
-            method: 'POST',
-            body: JSON.stringify(listingData)
-        });
-        
-        // Upload photos if any
-        if (uploadedPhotos.length > 0) {
+        // Detect chat_id from Telegram init data or URL param
+        const urlChatId = new URL(window.location).searchParams.get('chat_id');
+        const tgChatId = window.Telegram?.WebApp?.initDataUnsafe?.chat?.id;
+        const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+        const publishChatId = urlChatId || tgChatId || startParam || null;
+
+        if (isEditMode) {
+            // Update existing listing
+            await apiCall(`/api/listings/${editingListingId}`, {
+                method: 'PUT',
+                body: JSON.stringify(listingData)
+            });
+            // Upload any newly added photos
+            await uploadPhotos(editingListingId);
+            showLoading(false);
+            window.tgWebApp.hapticFeedback('notification');
+            showToast('Changes saved!', 'success');
+            setTimeout(() => { window.location.href = '/'; }, 1200);
+        } else {
+            // Create listing
+            const listing = await apiCall('/api/listings', {
+                method: 'POST',
+                body: JSON.stringify(listingData)
+            });
+            // Upload photos if any
             await uploadPhotos(listing.listing_id);
+            // Publish listing
+            await apiCall(`/api/listings/${listing.listing_id}/publish`, {
+                method: 'POST',
+                body: JSON.stringify(publishChatId ? { chat_id: publishChatId } : {})
+            });
+            showLoading(false);
+            window.tgWebApp.hapticFeedback('notification');
+            showToast('Listing created successfully!', 'success');
+            setTimeout(() => { window.location.href = '/'; }, 1500);
         }
-        
-        // Publish listing
-        await apiCall(`/api/listings/${listing.listing_id}/publish`, {
-            method: 'POST'
-        });
-        
-        showLoading(false);
-        window.tgWebApp.hapticFeedback('notification');
-        showToast('Listing created successfully!', 'success');
-        
-        // Redirect to main page
-        setTimeout(() => {
-            window.location.href = '/';
-        }, 1500);
         
     } catch (error) {
         showLoading(false);
@@ -511,11 +586,16 @@ async function saveDraft() {
 async function uploadPhotos(listingId) {
     const formData = new FormData();
     
-    uploadedPhotos.forEach((photo, index) => {
-        formData.append(`photo_${index}`, photo.file);
+    // Only append newly added files (prefilled existing photos have no file object)
+    let idx = 0;
+    uploadedPhotos.forEach((photo) => {
+        if (photo.file) {
+            formData.append(`photo_${idx++}`, photo.file);
+        }
     });
     
-    const response = await fetch(`/api/listings/${listingId}/photos`, {
+    const base = __getApiBase();
+    const response = await fetch(`${base}/api/listings/${listingId}/photos`, {
         method: 'POST',
         credentials: 'include',
         // Attach Telegram initData header as well for auth rehydration
@@ -536,6 +616,7 @@ async function uploadPhotos(listingId) {
 function initCreateListing() {
     initPhotoUpload();
     initSaleModeSelection();
+    updateActionBarPadding();
     
     // Button handlers
     const nextBtn = document.getElementById('nextBtn');
@@ -550,8 +631,20 @@ function initCreateListing() {
     if (saveDraftBtn) saveDraftBtn.addEventListener('click', saveDraft);
     if (publishBtn) publishBtn.addEventListener('click', submitListing);
     
-    // Initialize first step
-    updateStepProgress();
+    // Detect edit mode: /edit/<id>
+    const editMatch = window.location.pathname.match(/^\/edit\/(\d+)$/);
+    if (editMatch) {
+        isEditMode = true;
+        editingListingId = parseInt(editMatch[1], 10);
+        loadListingForEdit(editingListingId).then(() => {
+            updateStepProgress();
+            adjustPreviewButtonsForEdit();
+        });
+        adjustPreviewButtonsForEdit();
+    } else {
+        // Initialize first step
+        updateStepProgress();
+    }
     
     // Set minimum end date for auctions
     const endDateInput = document.getElementById('endDate');
@@ -624,8 +717,13 @@ function updateTimer(timerElement, endTime) {
 // Listing actions
 async function publishListing(listingId) {
     try {
+        const urlChatId = new URL(window.location).searchParams.get('chat_id');
+        const tgChatId = window.Telegram?.WebApp?.initDataUnsafe?.chat?.id;
+        const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+        const publishChatId = urlChatId || tgChatId || startParam || null;
         await apiCall(`/api/listings/${listingId}/publish`, {
-            method: 'POST'
+            method: 'POST',
+            body: JSON.stringify(publishChatId ? { chat_id: publishChatId } : {})
         });
         
         showToast('Listing published successfully!', 'success');
@@ -655,8 +753,7 @@ async function closeListing(listingId) {
 }
 
 function editListing(listingId) {
-    // For now, redirect to create page (could be enhanced to pre-fill data)
-    window.location.href = '/create';
+    window.location.href = `/edit/${listingId}`;
 }
 
 function deleteListing(listingId) {
@@ -683,6 +780,13 @@ function deleteListing(listingId) {
 // Initialize Feather icons on page load
 document.addEventListener('DOMContentLoaded', () => {
     feather.replace();
+    // Recalculate on load & window resize (affects mobile UA bars)
+    updateActionBarPadding();
+    window.addEventListener('resize', () => {
+        // Debounce slightly
+        clearTimeout(window.__resizePadTimer);
+        window.__resizePadTimer = setTimeout(updateActionBarPadding, 100);
+    });
 });
 
 // Handle Telegram back button
@@ -697,6 +801,69 @@ document.addEventListener('telegram-back-button-click', () => {
 // Show back button on create listing page
 if (window.location.pathname === '/create') {
     window.tgWebApp.showBackButton();
+}
+
+// Helpers for edit mode
+async function loadListingForEdit(listingId) {
+    try {
+        const data = await apiCall(`/api/listings/${listingId}`);
+        // Prefill basic fields
+        document.getElementById('title').value = data.title || '';
+        document.getElementById('description').value = data.description || '';
+
+        // Sale mode
+        if (data.sale_mode) {
+            selectSaleMode(data.sale_mode);
+            // Allow DOM to render config before filling
+            setTimeout(() => {
+                switch (data.sale_mode) {
+                    case 'fixed_price':
+                        const fp = document.getElementById('fixedPrice');
+                        if (fp) fp.value = data.fixed_price ?? '';
+                        const neg = document.getElementById('isNegotiable');
+                        if (neg) neg.checked = !!data.is_negotiable;
+                        break;
+                    case 'name_your_price':
+                        const mp = document.getElementById('minPrice');
+                        if (mp) mp.value = data.min_price ?? '';
+                        const po = document.getElementById('privateOffers');
+                        if (po) po.checked = !!data.private_offers;
+                        break;
+                    case 'auction':
+                        const sp = document.getElementById('startPrice');
+                        if (sp) sp.value = data.start_price ?? '';
+                        const bs = document.getElementById('bidStep');
+                        if (bs) bs.value = data.bid_step ?? 1;
+                        const et = document.getElementById('endDate');
+                        if (et && data.end_time) {
+                            // Convert ISO to input value (YYYY-MM-DDTHH:mm)
+                            et.value = data.end_time.slice(0,16);
+                        }
+                        break;
+                }
+            }, 0);
+        }
+
+        // Prefill existing photos into grid (as previews only; not re-uploaded)
+        if (Array.isArray(data.photos)) {
+            uploadedPhotos = data.photos
+                .sort((a,b) => (a.order||0)-(b.order||0))
+                .map((p) => ({ id: `existing_${p.order}_${Date.now()}`, file: null, preview: p.url }));
+            renderPhotoGrid();
+        }
+
+        // Tweak UI texts for edit mode
+        const titleEl = document.querySelector('.app-title');
+        if (titleEl) titleEl.textContent = 'Edit Listing';
+        const nextBtn = document.getElementById('nextBtn');
+        if (nextBtn) nextBtn.textContent = 'Next';
+        const publishBtn = document.getElementById('publishBtn');
+        if (publishBtn) publishBtn.textContent = 'Save Changes';
+        adjustPreviewButtonsForEdit();
+    } catch (e) {
+        console.error('Failed to load listing', e);
+        showToast('Failed to load listing for edit', 'error');
+    }
 }
 
 // Fix button clicks - ensure they work without WebApp API
